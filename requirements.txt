@@ -1,4 +1,4 @@
-dspy_ai==2.4.9
+dspy-ai==2.4.9
 wikipedia==1.4.0
 sentence-transformers
 toml
@@ -10,3 +10,4 @@ langchain-qdrant
 numpy==1.26.4
 litellm==1.59.3
 diskcache
+lotus-ai[arxiv,file-extractor]==1.1.2
