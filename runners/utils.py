@@ -36,6 +36,9 @@ class LotusRM(dspy.Retrieve):
         for query in queries:
             for corpus in self.corpus:
                 df = web_search(corpus, query, self.k, self.cols, self.sort_by_date)
+                if len(df) == 0:
+                    print(f"No results found for query: {query}")
+                    continue
                 df["query"] = query
                 if corpus == WebSearchCorpus.ARXIV:
                     df.rename(
