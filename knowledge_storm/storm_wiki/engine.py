@@ -285,7 +285,7 @@ class STORMWikiRunner(Engine):
             callback_handler=callback_handler,
         )
         
-        output_file = os.path.join(self.article_output_dir, "storm_gen_article.txt")
+        output_file = os.path.join(self.article_output_dir, "storm_gen_article.md")
         draft_article.dump_article_as_plain_text(output_file)
         draft_article.dump_reference_to_file(
             os.path.join(self.article_output_dir, "url_to_info.json")
@@ -308,7 +308,7 @@ class STORMWikiRunner(Engine):
             remove_duplicate=remove_duplicate,
         )
         
-        output_file = os.path.join(self.article_output_dir, "storm_gen_article_polished.txt")
+        output_file = os.path.join(self.article_output_dir, "storm_gen_article_polished.md")
         FileIOHelper.write_str(
             polished_article.to_string(),
             output_file,
