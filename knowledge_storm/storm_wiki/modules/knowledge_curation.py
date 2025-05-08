@@ -152,7 +152,7 @@ class AskQuestionWithPersona(dspy.Signature):
 
 
 class QuestionToQuery(dspy.Signature):
-    """You want to answer the question using Google search. What do you type in the search box?
+    """You want to answer the question using Google search. What do you type in the search box? Make sure to not include any other text than the queries.
     Write the queries you will use in the following format:
     - query 1
     - query 2
