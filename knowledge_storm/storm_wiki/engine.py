@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Union, Literal, Optional
 
@@ -16,7 +17,7 @@ from .modules.storm_dataclass import StormInformationTable, StormArticle
 from ..interface import Engine, LMConfigs, Retriever
 from ..lm import LitellmModel
 from ..utils import FileIOHelper, makeStringRed, truncate_filename
-
+from datetime import datetime
 
 class STORMWikiLMConfigs(LMConfigs):
     """Configurations for LLM used in different parts of STORM.
@@ -172,7 +173,7 @@ class STORMWikiRunner(Engine):
     """STORM Wiki pipeline runner."""
 
     def __init__(
-        self, args: STORMWikiRunnerArguments, lm_configs: STORMWikiLMConfigs, rm
+        self, args: STORMWikiRunnerArguments, lm_configs: STORMWikiLMConfigs, rm, logger: logging.Logger | None = None
     ):
         super().__init__(lm_configs=lm_configs)
         self.args = args
@@ -207,12 +208,14 @@ class STORMWikiRunner(Engine):
 
         self.lm_configs.init_check()
         self.apply_decorators()
+        self.logger = logger
 
     def run_knowledge_curation_module(
         self,
         ground_truth_url: str = "None",
         callback_handler: BaseCallbackHandler = None,
     ) -> StormInformationTable:
+        start_time = time.time()
         (
             information_table,
             conversation_log,
@@ -225,13 +228,21 @@ class STORMWikiRunner(Engine):
             return_conversation_log=True,
         )
 
+        output_file = os.path.join(self.article_output_dir, "conversation_log.json")
         FileIOHelper.dump_json(
             conversation_log,
-            os.path.join(self.article_output_dir, "conversation_log.json"),
+            output_file,
         )
         information_table.dump_url_to_info(
             os.path.join(self.article_output_dir, "raw_search_results.json")
         )
+        
+        end_time = time.time()
+        if self.logger:
+            self.logger.info(f"knowledge_curation, run_knowledge_curation_module, {end_time - start_time}, {output_file}")
+            with open(os.path.join(self.article_output_dir, "execution_times.csv"), "a") as f:
+                f.write(f"{datetime.now()},INFO,knowledge_storm,knowledge_curation,run_knowledge_curation_module,{end_time - start_time},{output_file}\n")
+        
         return information_table
 
     def run_outline_generation_module(
@@ -239,18 +250,25 @@ class STORMWikiRunner(Engine):
         information_table: StormInformationTable,
         callback_handler: BaseCallbackHandler = None,
     ) -> StormArticle:
+        start_time = time.time()
         outline, draft_outline = self.storm_outline_generation_module.generate_outline(
             topic=self.topic,
             information_table=information_table,
             return_draft_outline=True,
             callback_handler=callback_handler,
         )
-        outline.dump_outline_to_file(
-            os.path.join(self.article_output_dir, "storm_gen_outline.txt")
-        )
+        
+        output_file = os.path.join(self.article_output_dir, "storm_gen_outline.txt")
+        outline.dump_outline_to_file(output_file)
         draft_outline.dump_outline_to_file(
             os.path.join(self.article_output_dir, "direct_gen_outline.txt")
         )
+        
+        end_time = time.time()
+        if self.logger:
+            self.logger.info(f"outline_generation, run_outline_generation_module, {end_time - start_time}, {output_file}")
+            with open(os.path.join(self.article_output_dir, "execution_times.csv"), "a") as f:
+                f.write(f"{datetime.now()},INFO,knowledge_storm,outline_generation,run_outline_generation_module,{end_time - start_time},{output_file}\n")
         return outline
 
     def run_article_generation_module(
@@ -259,32 +277,48 @@ class STORMWikiRunner(Engine):
         information_table=StormInformationTable,
         callback_handler: BaseCallbackHandler = None,
     ) -> StormArticle:
+        start_time = time.time()
         draft_article = self.storm_article_generation.generate_article(
             topic=self.topic,
             information_table=information_table,
             article_with_outline=outline,
             callback_handler=callback_handler,
         )
-        draft_article.dump_article_as_plain_text(
-            os.path.join(self.article_output_dir, "storm_gen_article.txt")
-        )
+        
+        output_file = os.path.join(self.article_output_dir, "storm_gen_article.txt")
+        draft_article.dump_article_as_plain_text(output_file)
         draft_article.dump_reference_to_file(
             os.path.join(self.article_output_dir, "url_to_info.json")
         )
+        
+        end_time = time.time()
+        if self.logger:
+            self.logger.info(f"article_generation, run_article_generation_module, {end_time - start_time}, {output_file}")
+            with open(os.path.join(self.article_output_dir, "execution_times.csv"), "a") as f:
+                f.write(f"{datetime.now()},INFO,knowledge_storm,article_generation,run_article_generation_module,{end_time - start_time},{output_file}\n")
         return draft_article
 
     def run_article_polishing_module(
         self, draft_article: StormArticle, remove_duplicate: bool = False
     ) -> StormArticle:
+        start_time = time.time()
         polished_article = self.storm_article_polishing_module.polish_article(
             topic=self.topic,
             draft_article=draft_article,
             remove_duplicate=remove_duplicate,
         )
+        
+        output_file = os.path.join(self.article_output_dir, "storm_gen_article_polished.txt")
         FileIOHelper.write_str(
             polished_article.to_string(),
-            os.path.join(self.article_output_dir, "storm_gen_article_polished.txt"),
+            output_file,
         )
+        
+        end_time = time.time()
+        if self.logger:
+            self.logger.info(f"article_polishing, run_article_polishing_module, {end_time - start_time}, {output_file}")
+            with open(os.path.join(self.article_output_dir, "execution_times.csv"), "a") as f:
+                f.write(f"{datetime.now()},INFO,knowledge_storm,article_polishing,run_article_polishing_module,{end_time - start_time},{output_file}\n")
         return polished_article
 
     def post_run(self):
@@ -293,14 +327,17 @@ class STORMWikiRunner(Engine):
         1. Dumping the run configuration.
         2. Dumping the LLM call history.
         """
+        start_time = time.time()
         config_log = self.lm_configs.log()
+        config_output_file = os.path.join(self.article_output_dir, "run_config.json")
         FileIOHelper.dump_json(
-            config_log, os.path.join(self.article_output_dir, "run_config.json")
+            config_log, config_output_file
         )
 
         llm_call_history = self.lm_configs.collect_and_reset_lm_history()
+        history_output_file = os.path.join(self.article_output_dir, "llm_call_history.jsonl")
         with open(
-            os.path.join(self.article_output_dir, "llm_call_history.jsonl"), "w"
+            history_output_file, "w"
         ) as f:
             for call in llm_call_history:
                 if "kwargs" in call:
@@ -308,24 +345,45 @@ class STORMWikiRunner(Engine):
                         "kwargs"
                     )  # All kwargs are dumped together to run_config.json.
                 f.write(json.dumps(call) + "\n")
+        
+        end_time = time.time()
+        if self.logger:
+            self.logger.info(f"post_processing, post_run, {end_time - start_time}, {config_output_file},{history_output_file}")
+            with open(os.path.join(self.article_output_dir, "execution_times.csv"), "a") as f:
+                f.write(f"{datetime.now()},INFO,knowledge_storm,post_processing,post_run,{end_time - start_time},{config_output_file},{history_output_file}\n") 
 
     def _load_information_table_from_local_fs(self, information_table_local_path):
+        start_time = time.time()
         assert os.path.exists(information_table_local_path), makeStringRed(
             f"{information_table_local_path} not exists. Please set --do-research argument to prepare the conversation_log.json for this topic."
         )
-        return StormInformationTable.from_conversation_log_file(
+        result = StormInformationTable.from_conversation_log_file(
             information_table_local_path
         )
+        end_time = time.time()
+        if self.logger:
+            self.logger.info(f"data_loading, _load_information_table_from_local_fs, {end_time - start_time}, {information_table_local_path}")
+            with open(os.path.join(self.article_output_dir, "execution_times.csv"), "a") as f:
+                f.write(f"{datetime.now()},INFO,knowledge_storm,data_loading,load_information_table_from_local_fs,{end_time - start_time},{information_table_local_path}\n")
+        return result
 
     def _load_outline_from_local_fs(self, topic, outline_local_path):
+        start_time = time.time()
         assert os.path.exists(outline_local_path), makeStringRed(
             f"{outline_local_path} not exists. Please set --do-generate-outline argument to prepare the storm_gen_outline.txt for this topic."
         )
-        return StormArticle.from_outline_file(topic=topic, file_path=outline_local_path)
+        result = StormArticle.from_outline_file(topic=topic, file_path=outline_local_path)
+        end_time = time.time()
+        if self.logger:
+            self.logger.info(f"data_loading, _load_outline_from_local_fs, {end_time - start_time}, {outline_local_path}")
+            with open(os.path.join(self.article_output_dir, "execution_times.csv"), "a") as f:
+                f.write(f"{datetime.now()},INFO,knowledge_storm,data_loading,load_outline_from_local_fs,{end_time - start_time},{outline_local_path}\n")
+        return result
 
     def _load_draft_article_from_local_fs(
         self, topic, draft_article_path, url_to_info_path
     ):
+        start_time = time.time()
         assert os.path.exists(draft_article_path), makeStringRed(
             f"{draft_article_path} not exists. Please set --do-generate-article argument to prepare the storm_gen_article.txt for this topic."
         )
@@ -334,9 +392,15 @@ class STORMWikiRunner(Engine):
         )
         article_text = FileIOHelper.load_str(draft_article_path)
         references = FileIOHelper.load_json(url_to_info_path)
-        return StormArticle.from_string(
+        result = StormArticle.from_string(
             topic_name=topic, article_text=article_text, references=references
         )
+        end_time = time.time()
+        if self.logger:
+            self.logger.info(f"data_loading, _load_draft_article_from_local_fs, {end_time - start_time}, {draft_article_path},{url_to_info_path}")
+            with open(os.path.join(self.article_output_dir, "execution_times.csv"), "a") as f:
+                f.write(f"{datetime.now()},INFO,knowledge_storm,data_loading,load_draft_article_from_local_fs,{end_time - start_time},{draft_article_path},{url_to_info_path}\n")
+        return result
 
     def run(
         self,
@@ -366,6 +430,7 @@ class STORMWikiRunner(Engine):
             remove_duplicate: If True, remove duplicated content.
             callback_handler: A callback handler to handle the intermediate results.
         """
+        start_time = time.time()
         assert (
             do_research
             or do_generate_outline
@@ -377,7 +442,7 @@ class STORMWikiRunner(Engine):
 
         self.topic = topic
         self.article_dir_name = truncate_filename(
-            topic.replace(" ", "_").replace("/", "_")
+            datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + "_" + topic.replace(" ", "_").replace("/", "_")
         )
         self.article_output_dir = os.path.join(
             self.args.output_dir, self.article_dir_name
@@ -439,3 +504,9 @@ class STORMWikiRunner(Engine):
             self.run_article_polishing_module(
                 draft_article=draft_article, remove_duplicate=remove_duplicate
             )
+            
+        end_time = time.time()
+        if self.logger:
+            self.logger.info(f"pipeline, run, {end_time - start_time}, {self.article_output_dir}")
+            with open(os.path.join(self.article_output_dir, "execution_times.csv"), "a") as f:
+                f.write(f"{datetime.now()},INFO,knowledge_storm,pipeline,run,{end_time - start_time},{self.article_output_dir}\n")

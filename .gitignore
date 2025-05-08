@@ -25,3 +25,5 @@ secrets.toml
 */assertion.log
 *results/
 .venv/
+
+storm_wiki_output
